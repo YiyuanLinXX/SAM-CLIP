@@ -1,11 +1,17 @@
 # SAM-CLIP
 Authors: Yiyuan Lin, Zachary Dashner, Ana Jimenez, Dustin Wilkerson, Lance Cadle-Davidson, Summaira Riaz, Yu Jiang
 
+[[`Paper`]()] [[`Dataset`]()] [[`BibTex`](#Citation)]
+
 This is the official code for our paper: <TODO>,
 
 
 
 This is the official implementation of **SAM-CLIP**, a large multi-modal model where Segment Anything Model extended with CLIP embeddings for improved segmentation performance.
+
+<p float="left">
+  <img src="assets/model_arch.png" width="80%" />
+</p>
 
 
 
