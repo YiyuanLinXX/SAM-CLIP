@@ -9,7 +9,7 @@ This is the official code for our paper: <TODO>,
 
 This is the official implementation of **SAM-CLIP**, a large multi-modal model where Segment Anything Model extended with CLIP embeddings for improved segmentation performance.
 
-<p float="left">
+<p float="center">
   <img src="assets/model_arch.png" width="80%" />
 </p>
 
