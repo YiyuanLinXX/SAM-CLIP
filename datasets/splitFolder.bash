@@ -1,0 +1,3 @@
+python3 splitFolder.py -c '/home/yl3663/finetune-SAM/datasets/Califlower_thermal/test.csv' --src_images '/home/yl3663/finetune-SAM/datasets' --src_masks '/home/yl3663/finetune-SAM/datasets' --dst_images '/home/yl3663/finetune-SAM/datasets/Califlower_thermal/test_images' --dst_masks '/home/yl3663/finetune-SAM/datasets/Califlower_thermal/test_gt'
+
+# python3 splitFolder.py -c '/home/yl3663/finetune-SAM/datasets/BlackRot_2024/test.csv' --src_images '/home/yl3663/finetune-SAM/datasets' --src_masks '/home/yl3663/finetune-SAM/datasets' --dst_images '/home/yl3663/finetune-SAM/datasets/BlackRot_2024/test_images' --dst_masks '/home/yl3663/finetune-SAM/datasets/BlackRot_2024/test_gt'
