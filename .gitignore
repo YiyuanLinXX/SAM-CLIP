@@ -4,8 +4,4 @@ weights/*.pth
 __pycache__/
 *.py[cod]
 ckpt/*.pth
-test_results/
 inference_results/
-image/
-bash_scripts/
-zero_shot_inference/
