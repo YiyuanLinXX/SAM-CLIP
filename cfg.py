@@ -13,6 +13,9 @@ def parse_args():
     parser.add_argument('-val_img_list', type=str,default='./datasets/val.csv')
     parser.add_argument('-targets', type=str,default='combine_all')
 
+    parser.add_argument('-text_prompt', type=str, default='Powdery mildew',
+                        help='text prompt for CLIP text encoder')
+
     parser.add_argument('-finetune_type', type=str, default='adapter', help='normalization type, pick among vanilla,adapter,lora')
     parser.add_argument('-normalize_type', type=str, default='sam', help='normalization type, pick between sam or medsam')
     
@@ -70,7 +73,6 @@ def parse_args():
     parser.add_argument('-devices', type=list, default=[0,1] , help='if split encoder to multiple gpus')
     parser.add_argument('-gpu_fractions', type=list, default=[0.5,0.5] , help='how to split encoder to multiple gpus')
     
-  
     parser.add_argument('-evl_chunk', type=int, default=None , help='evaluation chunk')
     opt = parser.parse_args()
 
