@@ -63,7 +63,7 @@ pip install -r requirements.txt
   ...
   ```
   
-- Download the pre-trained weights of SAM from the [official SAM repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints) or our fine-tuned checkpoints for [PM]() and [Canopy](), and place them in the  `weights/` directory.
+- Download the pre-trained weights of SAM from the [official SAM repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints) or our fine-tuned checkpoints for [Powdery Mildew]() and [Canopy](), and place them in the  `weights/` directory.
 
 
 
