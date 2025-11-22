@@ -1,7 +1,7 @@
 export CUDA_VISIBLE_DEVICES="0"
 
 python3 inference_sam_clip.py \
-  --checkpoint_dir '/home/yl3663/SAM-CLIP/ckpt/SAM_CLIP_vit_b_ed_adapter_PM_2019' \
+  --checkpoint_dir '/home/yl3663/SAM-CLIP/ckpt/SAM_CLIP_vit_h_ed_vanilla_PM_2019' \
   --image_dir './datasets/PM_2019/test_images' \
-  --output_dir '/home/yl3663/SAM-CLIP/inference_results/SAM_CLIP_vit_h_ed_adapter_PM_2019' \
+  --output_dir '/home/yl3663/SAM-CLIP/inference_results/SAM_CLIP_vit_h_ed_vanilla_PM_2019' \
   --text_prompt "powdery mildew"
