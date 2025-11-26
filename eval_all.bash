@@ -3,73 +3,102 @@
 # Batch run mIoU evaluation + worst case metrics
 # ====================================
 #
-# USAGE:
 #   1) Edit FOLDER_PAIRS: each line "PRED|GT"
-#   2) Edit the arguments "SAVE_PER_IMAGE", "QUANTILES" and "SCRIPT_PATH"
+#           FOLDER_PAIRS format:
+#              FOLDER_PAIRS=(
+#                  PRED="/pred_path_1" GT="/gt_path_1"
+#                  PRED="/pred_path_2" GT="/gt_path_2"
+#              )
+#   2) Edit the arguments "SAVE_PER_IMAGE", "QUANTILES", "TARGET_LABELS" and "SCRIPT_PATH"
 #   3) run the following command in the terminal
 #
 #            bash eval_all.bash
-#
-#
 # ====================================
 
 FOLDER_PAIRS=(
-  # "PRED|GT"
-    "/media/yl3663/Data/Datasets/PM_2019/test_image|/media/yl3663/Data/Datasets/PM_2019/test_gt"
-    "/media/yl3663/Data/Datasets/Canopy_2020/test_image|/media/yl3663/Data/Datasets/Canopy_2020/test_gt"
+    PRED="/home/yl3663/SAM_CLIP/test_results/PM_2019/SAM_CLIP_vit_b_ed_adapter_PM_2019" GT="/home/yl3663/SAM_CLIP/datasets/PM_2019/test_gt"
 )
 
-SAVE_PER_IMAGE="--save_per_image"
-QUANTILES="--quantiles 1 5 6 7 8 9 10 15 20"
-SCRIPT_PATH="utils/eval_all.py"
+# 1 = enable --save_per_image, 0 = disable
+SAVE_PER_IMAGE=1
 
-clean_pair() {
-  # remove CR, remove NBSP, trim leading/trailing spaces
-  echo -n "$1" \
-  | tr -d '\r' \
-  | sed -e 's/\xC2\xA0//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
-}
+# Only values, not flag
+QUANTILES="5 10 15"
 
-for raw in "${FOLDER_PAIRS[@]}"; do
-  pair=$(clean_pair "$raw")
+# Optional: target label values for worst-case metrics.
+# Leave empty ("") to auto-select all non-background (non-zero) classes.
+# Otherwise specify raw pixel values, e.g.:
+#   TARGET_LABELS="1"
+#   TARGET_LABELS="1 3 255"
+TARGET_LABELS=""
 
-  # skip malformed lines
-  if [[ "$pair" != *"|"* ]] || [[ -z "$pair" ]]; then
-    echo ">> Skipping malformed pair: [$raw]"
-    continue
-  fi
+SCRIPT_PATH="./utils/eval_all.py"
 
-  PRED_FOLDER="${pair%%|*}"
-  GT_FOLDER="${pair##*|}"
+# -----------------------------------------
+# Main loop
+# -----------------------------------------
 
-  # trim again after split (safety)
-  PRED_FOLDER=$(clean_pair "$PRED_FOLDER")
-  GT_FOLDER=$(clean_pair "$GT_FOLDER")
+index=0
+total=${#FOLDER_PAIRS[@]}
 
-  # sanity check
-  if [[ ! -d "$PRED_FOLDER" ]]; then
-    echo "!! Pred folder not found: $PRED_FOLDER — skipped."
-    continue
-  fi
-  if [[ ! -d "$GT_FOLDER" ]]; then
-    echo "!! GT folder not found: $GT_FOLDER — skipped."
-    continue
-  fi
+while [[ $index -lt $total ]]; do
 
-  OUTPUT_CSV="${PRED_FOLDER}/evaluation_results.csv"
+    # Parse two consecutive entries: PRED="xxx", GT="xxx"
+    eval ${FOLDER_PAIRS[$index]}     # defines PRED
+    eval ${FOLDER_PAIRS[$((index+1))]}  # defines GT
 
-  echo "======================================="
-  echo "Evaluating:"
-  echo "Pred folder: $PRED_FOLDER"
-  echo "GT folder:   $GT_FOLDER"
-  echo "Output CSV:  $OUTPUT_CSV"
-  echo "======================================="
+    PRED_FOLDER="$PRED"
+    GT_FOLDER="$GT"
 
-  python3 "$SCRIPT_PATH" \
-    --pred_folder "$PRED_FOLDER" \
-    --gt_folder "$GT_FOLDER" \
-    --output_csv "$OUTPUT_CSV" \
-    $SAVE_PER_IMAGE \
-    $QUANTILES
+    # Increment index by 2
+    index=$((index+2))
+
+    # sanity check
+    if [[ ! -d "$PRED_FOLDER" ]]; then
+        echo "!! Pred folder not found: $PRED_FOLDER"
+        continue
+    fi
+    if [[ ! -d "$GT_FOLDER" ]]; then
+        echo "!! GT folder not found: $GT_FOLDER"
+        continue
+    fi
+
+    OUTPUT_CSV="${PRED_FOLDER}/evaluation_results.csv"
+
+    echo "======================================="
+    echo "Evaluating:"
+    echo "Pred folder: $PRED_FOLDER"
+    echo "GT folder:   $GT_FOLDER"
+    echo "Output CSV:  $OUTPUT_CSV"
+    echo "======================================="
+
+    # Build command (your preferred format)
+    CMD=(python3 "$SCRIPT_PATH"
+         --pred_folder "$PRED_FOLDER"
+         --gt_folder "$GT_FOLDER"
+         --output_csv "$OUTPUT_CSV"
+    )
+
+    # --save_per_image is a boolean flag
+    if [[ "$SAVE_PER_IMAGE" -eq 1 ]]; then
+        CMD+=(--save_per_image)
+    fi
+
+    # add quantiles
+    if [[ -n "$QUANTILES" ]]; then
+        CMD+=(--quantiles $QUANTILES)
+    fi
+
+    # add target labels
+    if [[ -n "$TARGET_LABELS" ]]; then
+        CMD+=(--target_labels $TARGET_LABELS)
+    fi
+
+    echo "Running:"
+    printf "  %q " "${CMD[@]}"
+    echo -e "\n"
+
+    "${CMD[@]}"
+
 done
 

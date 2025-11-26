@@ -8,60 +8,160 @@ import argparse
 from tqdm import tqdm
 from pathlib import Path
 
-# === ANSI color codes ===
+# ANSI color codes
 COLOR_GREEN  = "\033[92m"
 COLOR_CYAN   = "\033[96m"
 COLOR_YELLOW = "\033[93m"
 COLOR_RESET  = "\033[0m"
 
-# Only consider these as images (lowercase suffixes)
 ALLOWED_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+
 
 def is_image_file(p: Path) -> bool:
     return p.is_file() and p.suffix.lower() in ALLOWED_EXTS
 
-def intersect_and_union(pred, label, num_classes=2, ignore_index=255):
-    mask = (label != ignore_index)
-    pred = pred[mask]
-    label = label[mask]
 
-    intersect = pred[pred == label]
-    area_intersect = np.histogram(intersect, bins=num_classes, range=(0, num_classes))[0]
-    area_pred      = np.histogram(pred,      bins=num_classes, range=(0, num_classes))[0]
-    area_label     = np.histogram(label,     bins=num_classes, range=(0, num_classes))[0]
+# ------------------ label scanning and mapping ------------------ #
+
+def scan_unique_labels(pred_files, gt_files_map):
+    unique_values = set()
+
+    for pred_file in tqdm(pred_files, desc="Scanning labels", leave=False):
+        stem = pred_file.stem
+        gt_path = gt_files_map.get(stem, None)
+        if gt_path is None:
+            continue
+
+        pred = cv2.imread(str(pred_file), cv2.IMREAD_GRAYSCALE)
+        label = cv2.imread(str(gt_path), cv2.IMREAD_GRAYSCALE)
+        if pred is None or label is None:
+            continue
+        if pred.shape != label.shape:
+            continue
+
+        unique_values.update(np.unique(pred))
+        unique_values.update(np.unique(label))
+
+    if not unique_values:
+        unique_values = {0}
+        print(f"{COLOR_YELLOW}No valid labels found; fallback to single class [0].{COLOR_RESET}")
+
+    label_values = sorted(int(v) for v in unique_values)
+    print(f"{COLOR_CYAN}Detected label values: {label_values}{COLOR_RESET}")
+    return label_values
+
+
+def build_lut(label_values):
+    value_to_index = {v: i for i, v in enumerate(label_values)}
+
+    max_raw = max(label_values)
+    lut = np.full(max_raw + 1, -1, dtype=np.int32)
+    for v, idx in value_to_index.items():
+        if v < 0:
+            raise ValueError("Negative label values are not supported.")
+        lut[v] = idx
+
+    return lut, value_to_index
+
+
+def encode_with_lut(mask, lut):
+    mask_int = mask.astype(np.int32)
+    max_allowed = lut.shape[0] - 1
+    if mask_int.max() > max_allowed:
+        raise ValueError(
+            f"Found label value {mask_int.max()} larger than LUT max index {max_allowed}."
+        )
+    encoded = lut[mask_int]
+    encoded[encoded < 0] = 0
+    return encoded
+
+
+# ------------------ IoU utilities ------------------ #
+
+def intersect_and_union(pred_idx, label_idx, num_classes):
+    pred_flat = pred_idx.ravel()
+    label_flat = label_idx.ravel()
+    intersect = pred_flat[pred_flat == label_flat]
+
+    area_intersect = np.bincount(intersect, minlength=num_classes)
+    area_pred      = np.bincount(pred_flat, minlength=num_classes)
+    area_label     = np.bincount(label_flat, minlength=num_classes)
     area_union     = area_pred + area_label - area_intersect
-    return area_intersect, area_union
+
+    return area_intersect.astype(np.float64), area_union.astype(np.float64)
+
 
 def compute_iou(area_intersect, area_union):
     return area_intersect / (area_union + 1e-10)
 
-def evaluate_folders(pred_folder, gt_folder, output_csv,
-                     save_per_image=False, num_classes=2, ignore_index=255,
-                     quantiles=[1,5,10], target_class=1):
+
+# ------------------ Main evaluation ------------------ #
+
+def evaluate_folders(
+    pred_folder,
+    gt_folder,
+    output_csv,
+    save_per_image=False,
+    quantiles=[1, 5, 10],
+    target_labels=None,
+):
 
     pred_folder = Path(pred_folder)
-    gt_folder   = Path(gt_folder)
+    gt_folder = Path(gt_folder)
 
-    # Only load image files
     pred_files = sorted([p for p in pred_folder.iterdir() if is_image_file(p)])
-    gt_files   = [p for p in gt_folder.iterdir() if is_image_file(p)]
-    gt_files_map = {f.stem: f for f in gt_files}  # stem -> Path
+    gt_files = [p for p in gt_folder.iterdir() if is_image_file(p)]
+    gt_files_map = {f.stem: f for f in gt_files}
 
-    # —— For mIoU_D (global, per-class) ——
+    if len(pred_files) == 0:
+        print(f"{COLOR_YELLOW}No prediction images found in {pred_folder}.{COLOR_RESET}")
+        return
+
+    # 1) Collect raw label values from all images
+    label_values = scan_unique_labels(pred_files, gt_files_map)
+    lut, value_to_index = build_lut(label_values)
+    num_classes = len(label_values)
+
+    print(f"{COLOR_CYAN}Number of classes = {num_classes}{COLOR_RESET}")
+    print(f"{COLOR_CYAN}Mapping (index -> raw): { {i: v for i, v in enumerate(label_values)} }{COLOR_RESET}")
+
+    # Decide target_labels
+    if target_labels is None or len(target_labels) == 0:
+        # auto: all non-minimum labels
+        if len(label_values) >= 2:
+            target_labels = label_values[1:]
+        else:
+            target_labels = label_values[:]
+        print(f"{COLOR_CYAN}Auto-selected target_labels = {target_labels}{COLOR_RESET}")
+
+    filtered_targets = []
+    for t in target_labels:
+        if t in value_to_index:
+            filtered_targets.append(t)
+        else:
+            print(f"{COLOR_YELLOW}Warning: target_label {t} not found in dataset; skipped.{COLOR_RESET}")
+
+    target_labels = filtered_targets
+    target_class_indices = [value_to_index[t] for t in target_labels]
+
+    # Allocations
     total_area_intersect = np.zeros(num_classes, dtype=np.float64)
     total_area_union     = np.zeros(num_classes, dtype=np.float64)
 
-    # —— For mIoU_I (image-avg, per-class) ——
-    per_class_iou_sums   = np.zeros(num_classes, dtype=np.float64)
-    images_counted       = 0
+    # For correct per-class image-avg IoU
+    per_class_iou_sums = np.zeros(num_classes, dtype=np.float64)
+    per_class_counts   = np.zeros(num_classes, dtype=np.float64)
 
-    # Per-image IoUs
-    per_image_ious_overall = []  # (filename, overall_iou)
-    per_image_ious_per_class = []  # (filename, iou_vector[num_classes])
+    images_counted = 0
+
+    # Store per-image data
+    per_image_ious_overall = []
+    per_image_ious_per_class = []
     per_image_records = []
 
     missing_count = 0
 
+    # 2) Main loop
     for pred_file in tqdm(pred_files, desc="Evaluating"):
         stem = pred_file.stem
         gt_path = gt_files_map.get(stem, None)
@@ -70,27 +170,34 @@ def evaluate_folders(pred_folder, gt_folder, output_csv,
             missing_count += 1
             continue
 
-        pred  = cv2.imread(str(pred_file), cv2.IMREAD_GRAYSCALE)
-        label = cv2.imread(str(gt_path),   cv2.IMREAD_GRAYSCALE)
+        pred = cv2.imread(str(pred_file), cv2.IMREAD_GRAYSCALE)
+        label = cv2.imread(str(gt_path), cv2.IMREAD_GRAYSCALE)
         if pred is None or label is None:
-            print(f"{COLOR_YELLOW}Warning: Cannot read {pred_file.name} or its GT. Skipping.{COLOR_RESET}")
+            continue
+        if pred.shape != label.shape:
             continue
 
-        # Binary 0/255 -> 0/1  (二分类假设)
-        pred  = (pred  == 255).astype(np.uint8)
-        label = (label == 255).astype(np.uint8)
+        pred_idx = encode_with_lut(pred, lut)
+        label_idx = encode_with_lut(label, lut)
 
-        # Dataset-level accumulation
-        area_int, area_uni = intersect_and_union(pred, label, num_classes, ignore_index)
+        area_int, area_uni = intersect_and_union(pred_idx, label_idx, num_classes)
+
+        # Dataset-level stats
         total_area_intersect += area_int
         total_area_union     += area_uni
 
-        # Image-level IoU (per-class)
-        iou_per_class = compute_iou(area_int, area_uni)  # shape: (num_classes,)
-        per_class_iou_sums += iou_per_class
+        # Compute per-class IoU for this image
+        iou_per_class = compute_iou(area_int, area_uni)
+
+        # Only count this image for class c if class appears
+        for c in range(num_classes):
+            if area_uni[c] > 0:
+                per_class_iou_sums[c] += iou_per_class[c]
+                per_class_counts[c] += 1
+
         images_counted += 1
 
-        # store per-image
+        # Store per-image
         img_overall_iou = float(np.mean(iou_per_class))
         per_image_ious_overall.append((pred_file.name, img_overall_iou))
         per_image_ious_per_class.append((pred_file.name, iou_per_class.copy()))
@@ -100,25 +207,20 @@ def evaluate_folders(pred_folder, gt_folder, output_csv,
                 "IoU_per_image_overall(%)": round(img_overall_iou * 100, 2)
             })
 
-    # —— mIoU_D (global, per-class & overall) ——
+    # 3) Compute mIoU_D and mIoU_I
     iou_global_per_class = compute_iou(total_area_intersect, total_area_union)
     mIoU_D_overall = float(np.mean(iou_global_per_class))
 
-    # —— mIoU_I (image-avg, per-class & overall) ——
-    if images_counted > 0:
-        iou_imageavg_per_class = per_class_iou_sums / images_counted
-        mIoU_I_overall = float(np.mean(iou_imageavg_per_class))
-    else:
-        iou_imageavg_per_class = np.zeros(num_classes, dtype=np.float64)
-        mIoU_I_overall = 0.0
+    # per class image-average IoU (correct behavior)
+    iou_imageavg_per_class = per_class_iou_sums / np.maximum(per_class_counts, 1e-10)
+    mIoU_I_overall = float(np.mean(iou_imageavg_per_class))
 
-    # —— Worst Case (two tracks) ——
-    worst_overall = []       # based on overall per-image IoU
-    worst_target  = []       # based on target-class per-image IoU
+    # 4) Worst case metrics
+    worst_overall = []
+    worst_targets = {}
 
     if per_image_ious_overall:
-        # Overall
-        per_image_ious_overall.sort(key=lambda x: x[1])  # ascending
+        per_image_ious_overall.sort(key=lambda x: x[1])
         total = len(per_image_ious_overall)
         for q in quantiles:
             k = max(1, int(total * q / 100))
@@ -126,38 +228,37 @@ def evaluate_folders(pred_folder, gt_folder, output_csv,
             avg_iou = float(np.mean([x[1] for x in worst_cases]))
             worst_overall.append((q, k, avg_iou, worst_cases))
 
-    if per_image_ious_per_class:
-        # Target-class
-        # build (filename, iou_target)
-        ti = int(target_class)
-        cls_list = [(fn, float(vec[ti])) for fn, vec in per_image_ious_per_class]
-        cls_list.sort(key=lambda x: x[1])  # ascending
-        total_t = len(cls_list)
+    # for each target label
+    for t, cls_idx in zip(target_labels, target_class_indices):
+        lst = [(fn, float(vec[cls_idx])) for fn, vec in per_image_ious_per_class]
+        lst.sort(key=lambda x: x[1])
+        total_t = len(lst)
+
+        t_blocks = []
         for q in quantiles:
             k = max(1, int(total_t * q / 100))
-            worst_cases = cls_list[:k]
+            worst_cases = lst[:k]
             avg_iou = float(np.mean([x[1] for x in worst_cases]))
-            worst_target.append((q, k, avg_iou, worst_cases))
+            t_blocks.append((q, k, avg_iou, worst_cases))
 
-    # —— CSV blocks ——
+        worst_targets[t] = t_blocks
+
+    # ------------------ CSV ------------------ #
+
     blocks = []
 
-    # Block 1: per-class (two methods)
-    block1 = pd.DataFrame({
-        "Class": [f"Class_{i}" for i in range(num_classes)],
-        "IoU_Global(%)":   np.round(iou_global_per_class   * 100, 2),  # mIoU_D_class
-        "IoU_ImageAvg(%)": np.round(iou_imageavg_per_class * 100, 2),  # mIoU_I_class
-    })
-    blocks.append(block1)
+    blocks.append(pd.DataFrame({
+        "ClassIndex": list(range(num_classes)),
+        "RawLabelValue": label_values,
+        "IoU_Global(%)": np.round(iou_global_per_class * 100, 2),
+        "IoU_ImageAvg(%)": np.round(iou_imageavg_per_class * 100, 2),
+    }))
 
-    # Block 2: overall summary
-    block2 = pd.DataFrame({
+    blocks.append(pd.DataFrame({
         "Metric": ["mIoU_D_overall(%)", "mIoU_I_overall(%)"],
-        "Value":  [round(mIoU_D_overall*100, 2), round(mIoU_I_overall*100, 2)]
-    })
-    blocks.append(block2)
+        "Value":  [round(mIoU_D_overall * 100, 2), round(mIoU_I_overall * 100, 2)]
+    }))
 
-    # Block 3: worst case - overall
     if worst_overall:
         rows = []
         for q, k, avg_iou, worst_cases in worst_overall:
@@ -169,79 +270,91 @@ def evaluate_folders(pred_folder, gt_folder, output_csv,
             })
         blocks.append(pd.DataFrame(rows))
 
-    # Block 4: worst case - target class
-    if worst_target:
+    for t in target_labels:
+        t_blocks = worst_targets[t]
         rows_t = []
-        for q, k, avg_iou, worst_cases in worst_target:
+        for q, k, avg_iou, worst_cases in t_blocks:
             rows_t.append({
-                "WorstCase_TargetClass": f"Worst {q}%",
-                "TargetClass": target_class,
-                "NumImages": k,
-                "AvgIoU_target_class(%)": round(avg_iou * 100, 2),
-                "Filenames": "; ".join([wc[0] for wc in worst_cases])
-            })
+                "WorstCase_TargetLabel": f"Worst {q}%",
+            "TargetLabel": t,
+            "NumImages": k,
+            "AvgIoU_target_label(%)": round(avg_iou * 100, 2),
+            "Filenames": "; ".join([wc[0] for wc in worst_cases])
+        })
         blocks.append(pd.DataFrame(rows_t))
 
-    # Block 5: per-image overall IoU (optional)
     if save_per_image and per_image_records:
         blocks.append(pd.DataFrame(per_image_records))
 
-    # Write CSV
     with open(output_csv, "w") as f:
         for idx, block in enumerate(blocks):
             block.to_csv(f, index=False)
             if idx < len(blocks) - 1:
                 f.write("\n")
 
-    # —— terminal output ——
-    print(f"\n✅ Results saved to: {output_csv}")
+    # ------------------ print summary ------------------ #
 
-    print(f"\nPer-class mIoU (two methods):")
+    print(f"\nResults saved to: {output_csv}\n")
+
+    print("Per-class mIoU:")
     for i in range(num_classes):
+        raw = label_values[i]
         print(
-            f"  Class_{i}: "
-            f"{COLOR_GREEN}mIoU_D_class={iou_global_per_class[i]*100:.2f}%{COLOR_RESET}  "
-            f"{COLOR_CYAN}mIoU_I_class={iou_imageavg_per_class[i]*100:.2f}%{COLOR_RESET}"
+            f"  ClassIndex={i}, RawLabel={raw}: "
+            f"{COLOR_GREEN}mIoU_D={iou_global_per_class[i]*100:.2f}%{COLOR_RESET} "
+            f"{COLOR_CYAN}mIoU_I={iou_imageavg_per_class[i]*100:.2f}%{COLOR_RESET}"
         )
 
     print(
-        f"\nOverall: "
-        f"{COLOR_GREEN}mIoU_D={mIoU_D_overall*100:.2f}%{COLOR_RESET}, "
+        f"\nOverall: {COLOR_GREEN}mIoU_D={mIoU_D_overall*100:.2f}%{COLOR_RESET}, "
         f"{COLOR_CYAN}mIoU_I={mIoU_I_overall*100:.2f}%{COLOR_RESET}"
     )
 
     if worst_overall:
         print(f"\n{COLOR_YELLOW}=== Worst Case (Overall IoU) ==={COLOR_RESET}")
         for q, k, avg_iou, _ in worst_overall:
-            print(f"Worst {q}% ({k} images) Avg Overall IoU: {avg_iou*100:.2f}%")
+            print(f"Worst {q}% ({k} images): Avg IoU = {avg_iou*100:.2f}%")
 
-    if worst_target:
-        print(f"\n{COLOR_YELLOW}=== Worst Case (Target Class IoU, class={target_class}) ==={COLOR_RESET}")
-        for q, k, avg_iou, _ in worst_target:
-            print(f"Worst {q}% ({k} images) Avg Target-Class IoU: {avg_iou*100:.2f}%")
+    for t in target_labels:
+        print(f"\n{COLOR_YELLOW}=== Worst Case for Target Label {t} ==={COLOR_RESET}")
+        for q, k, avg_iou, _ in worst_targets[t]:
+            print(f"Worst {q}% ({k} images): Avg IoU = {avg_iou*100:.2f}%")
 
     if missing_count > 0:
-        print(f"{COLOR_YELLOW}⚠️ {missing_count} prediction image(s) had no matching GT image.{COLOR_RESET}")
+        print(f"{COLOR_YELLOW}{missing_count} prediction image(s) had no matching GT image.{COLOR_RESET}")
+
+
+# ------------------ CLI ------------------ #
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Compute per-class mIoU_D (global) & mIoU_I (image-avg), overall metrics, and worst-case IoU (overall & target-class) for binary segmentation."
+        description=(
+            "Compute per-class mIoU_D (global) and mIoU_I (image avg), "
+            "plus worst-case IoU (overall and per target label). "
+            "Distinct raw pixel values are treated as classes."
+        )
     )
-    parser.add_argument("--pred_folder", type=str, required=True, help="Folder with predicted masks")
-    parser.add_argument("--gt_folder",   type=str, required=True, help="Folder with ground truth masks")
-    parser.add_argument("--output_csv",  type=str, required=True, help="Path to output CSV")
-    parser.add_argument("--save_per_image", action="store_true", help="Save per-image overall IoU in the CSV")
-    parser.add_argument("--quantiles", type=int, nargs="+", default=[1,5,10],
-                        help="Percentages for worst case analysis (e.g., 1 5 10)")
-    parser.add_argument("--target_class", type=int, default=1,
-                        help="Target class index for worst-case-by-class analysis (default 1)")
+    parser.add_argument("--pred_folder", type=str, required=True)
+    parser.add_argument("--gt_folder", type=str, required=True)
+    parser.add_argument("--output_csv", type=str, required=True)
+    parser.add_argument("--save_per_image", action="store_true")
+    parser.add_argument("--quantiles", type=int, nargs="+", default=[1, 5, 10])
+    parser.add_argument(
+        "--target_labels",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Raw pixel values for worst-case analysis. Leave empty for auto."
+    )
+
     args = parser.parse_args()
 
-    evaluate_folders(pred_folder=args.pred_folder,
-                     gt_folder=args.gt_folder,
-                     output_csv=args.output_csv,
-                     save_per_image=args.save_per_image,
-                     num_classes=2,  # binary segmentation
-                     quantiles=args.quantiles,
-                     target_class=args.target_class)
+    evaluate_folders(
+        pred_folder=args.pred_folder,
+        gt_folder=args.gt_folder,
+        output_csv=args.output_csv,
+        save_per_image=args.save_per_image,
+        quantiles=args.quantiles,
+        target_labels=args.target_labels,
+    )
 
