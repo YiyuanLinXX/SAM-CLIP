@@ -1,7 +1,7 @@
 # SAM-CLIP
 **Authors**: [Yiyuan Lin](https://yiyuanlinxx.github.io/), Zachary Dashner, Ana Jimenez, Dustin Wilkerson, Lance Cadle-Davidson, Summaira Riaz, [Yu Jiang](https://cals.cornell.edu/people/yu-jiang)
 
-[[**`Paper`**]()] [[**`Dataset`**]()] [[**`BibTex`**](#Citation)]
+[[**`Paper`**]()] [[**`Dataset`**](https://cornell.app.box.com/folder/359649298815?s=qkofzu5b24hqkev6y9raga9t9ihoc5l1)] [[**`BibTex`**](#Citation)]
 
 ---
 
