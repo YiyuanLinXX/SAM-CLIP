@@ -1,5 +1,5 @@
 # SAM-CLIP
-**Authors**: [Yiyuan Lin](https://yiyuanlinxx.github.io/), Zachary Dashner, Ana Jimenez, Dustin Wilkerson, [Lance Cadle-Davidson](https://cals.cornell.edu/people/lance-cadle-davidson), [Summaira Riaz](https://vitisgen3.umn.edu/summaira-riaz), [Yu Jiang](https://cals.cornell.edu/people/yu-jiang)
+[Yiyuan Lin](https://yiyuanlinxx.github.io/), Zachary Dashner, Ana Jimenez, Dustin Wilkerson, [Lance Cadle-Davidson](https://cals.cornell.edu/people/lance-cadle-davidson), [Summaira Riaz](https://vitisgen3.umn.edu/summaira-riaz), [Yu Jiang](https://cals.cornell.edu/people/yu-jiang)
 
 [[**`Paper`**]()] [[**`Dataset`**](https://cornell.app.box.com/folder/359649298815?s=qkofzu5b24hqkev6y9raga9t9ihoc5l1)] [[**`BibTex`**](#Citation)]
 
