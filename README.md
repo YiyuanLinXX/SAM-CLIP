@@ -1,11 +1,11 @@
 # SAM-CLIP
 [Yiyuan Lin](https://yiyuanlinxx.github.io/), Zachary Dashner, Ana Jimenez, Dustin Wilkerson, [Lance Cadle-Davidson](https://cals.cornell.edu/people/lance-cadle-davidson), [Summaira Riaz](https://vitisgen3.umn.edu/summaira-riaz), [Yu Jiang](https://cals.cornell.edu/people/yu-jiang)
 
-[[**`Paper`**]()] [[**`Dataset`**](https://cornell.app.box.com/folder/359649298815?s=qkofzu5b24hqkev6y9raga9t9ihoc5l1)] [[**`BibTex`**](#Citation)]
+[[**`Paper`**](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6170008)] [[**`Dataset`**](https://cornell.app.box.com/folder/359649298815?s=qkofzu5b24hqkev6y9raga9t9ihoc5l1)] [[**`BibTex`**](#Citation)]
 
 ---
 
-This is the official implementation of **SAM-CLIP** proposed in our paper [Integrating Large Multi-Modal Models for Automated Powdery Mildew Phenotyping in Grapevines](), a large multi-modal model where Segment Anything Model (SAM) extended with Contrastive Language-Image Pretraining (CLIP) embeddings for improved segmentation performance. It enables accurate segmentation of powdery mildew and canopy structures under challenging field conditions using active illumination and multi-modal inputs.
+This is the official implementation of **SAM-CLIP** proposed in our paper [Integrating Large Multi-Modal Models for Automated Powdery Mildew Phenotyping in Grapevines](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6170008), a large multi-modal model where Segment Anything Model (SAM) extended with Contrastive Language-Image Pretraining (CLIP) embeddings for improved segmentation performance. It enables accurate segmentation of powdery mildew and canopy structures under challenging field conditions using active illumination and multi-modal inputs.
 
 <p align="center">
   <img src="assets/model_arch.png" width="80%" />
@@ -137,6 +137,13 @@ Other foundations for this codebase:
 Please cite our paper if you find our codes or paper helpful
 
 ```bib
-TODO
+@article{Lin2026,
+  title = {Integrating Large Multi-Modal Models for Automated Powdery Mildew Phenotyping in Grapevines},
+  url = {http://dx.doi.org/10.2139/ssrn.6170008},
+  DOI = {10.2139/ssrn.6170008},
+  publisher = {Elsevier BV},
+  author = {Lin,  Yiyuan and Dashner,  Zachary and Jimenez,  Ana and Wilkerson,  Dustin and Cadle-Davidson,  Lance  E. and Riaz,  Summaira and Jiang,  Yu},
+  year = {2026}
+}
 ```
 
