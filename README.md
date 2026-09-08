@@ -145,5 +145,18 @@ Please cite our paper if you find our codes or paper helpful
   author = {Lin,  Yiyuan and Dashner,  Zachary and Jimenez,  Ana and Wilkerson,  Dustin and Cadle-Davidson,  Lance  E. and Riaz,  Summaira and Jiang,  Yu},
   year = {2026}
 }
+
+@inproceedings{linEffectiveIntegrationVision2024,
+  title = {Effective Integration of Vision Foundational Models for Semantic Segmentation to Quantify Grape Foliage Powdery Mildew Infection},
+  booktitle = {2024 ASABE Annual International Meeting},
+  author = {Lin, Yiyuan and Underhill, Anna and Cadle-Davidson, Lance and Jimenez, Ana and Riaz, Summaira and Jiang, Yu},
+  year = 2024,
+  series = {ASABE Paper No. 2401108},
+  pages = {1-12},
+  publisher = {ASABE},
+  address = {St. Joseph, MI},
+  doi = {10.13031/aim.202401108},
+  keywords = {CLIP,Computer Vision,Powdery Mildew,SAM,Semantic Segmentation,Vineyard Management.}
+}
 ```
 
