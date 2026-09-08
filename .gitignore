@@ -1,7 +1,0 @@
-*.pth
-weights/*.pth
-**/__pycache__/
-__pycache__/
-*.py[cod]
-ckpt/*.pth
-inference_results/

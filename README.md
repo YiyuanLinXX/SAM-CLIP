@@ -1,162 +1,358 @@
-# SAM-CLIP
-[Yiyuan Lin](https://yiyuanlinxx.github.io/), Zachary Dashner, Ana Jimenez, Dustin Wilkerson, [Lance Cadle-Davidson](https://cals.cornell.edu/people/lance-cadle-davidson), [Summaira Riaz](https://vitisgen3.umn.edu/summaira-riaz), [Yu Jiang](https://cals.cornell.edu/people/yu-jiang)
+# SAM_CLIP Docker
 
-[[**`Paper`**](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6170008)] [[**`Dataset`**](https://cornell.app.box.com/folder/359649298815?s=qkofzu5b24hqkev6y9raga9t9ihoc5l1)] [[**`BibTex`**](#Citation)]
+English | [简体中文](README.zh-CN.md)
 
----
+A reproducible NVIDIA GPU container for SAM_CLIP training, multi-GPU DDP training, semantic-segmentation inference, instance-scored inference, evaluation, TensorBoard, and dataset utilities.
 
-This is the official implementation of **SAM-CLIP** proposed in our paper [Integrating Large Multi-Modal Models for Automated Powdery Mildew Phenotyping in Grapevines](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6170008), a large multi-modal model where Segment Anything Model (SAM) extended with Contrastive Language-Image Pretraining (CLIP) embeddings for improved segmentation performance. It enables accurate segmentation of powdery mildew and canopy structures under challenging field conditions using active illumination and multi-modal inputs.
+The image contains application code and pinned dependencies only. Datasets, pretrained SAM weights, checkpoints, and outputs are mounted at runtime and are intentionally excluded from the image and repository.
 
-<p align="center">
-  <img src="assets/model_arch.png" width="80%" />
-</p>
+## Features
 
+- NVIDIA GPU support through the NVIDIA Container Toolkit
+- Reproducible PyTorch 1.13.1 + CUDA 11.6 + cuDNN 8 environment
+- Single-GPU training
+- Standard one-process-per-GPU `torchrun` DDP training
+- Semantic-mask inference
+- Probability-map and connected-component instance inference
+- Semantic mIoU, worst-case, and instance AP evaluation
+- TensorBoard
+- Dataset splitting, mask conversion, COCO mask export, augmentation, and visualization tools
+- A self-contained synthetic-data smoke test
 
-The imagery datasets were collected by our autonomous phenotyping robot [PPBv2](https://github.com/YiyuanLinXX/PPBv2) which is designed for high-throughput phenotyping in field environments and  optimized for tasks such as disease phenotyping, supporting precise  spatiotemporal mapping of phenotypic traits.
+## Requirements
 
+- Linux x86_64 host
+- NVIDIA GPU
+- NVIDIA driver 510.39.01 or newer for CUDA 11.6
+- Docker Engine with Docker Compose v2
+- NVIDIA Container Toolkit configured for Docker
 
+Installation references:
 
-## Pre-requisites
+- [Docker Engine installation](https://docs.docker.com/engine/install/)
+- [Docker Compose GPU support](https://docs.docker.com/compose/how-tos/gpu-support/)
+- [NVIDIA Container Toolkit installation](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
 
-**Environment Setup**
-
-We recommend using **Conda**:
+Verify the host before building:
 
 ```bash
-conda env create -f environment.yml # edit the .yml file (e.g. cuda version) if needed
-conda activate sam_clip
+nvidia-smi
+docker version
+docker compose version
+docker run --rm --gpus all nvidia/cuda:11.6.2-base-ubuntu20.04 nvidia-smi
 ```
 
-You can also use pip:
+## Quick start
 
 ```bash
-pip install -r requirements.txt
+git clone <repository-url> SAM_CLIP_docker
+cd SAM_CLIP_docker
+./scripts/configure.sh
+docker compose build
+docker compose run --rm sam-clip gpu-check
 ```
 
+The GPU check prints Python, PyTorch, CUDA, cuDNN, and visible-GPU information, then performs a CUDA tensor operation.
 
+Download an official SAM checkpoint:
 
-## Getting Started
-
-### Step 1: Dataset and Model Weights Preparation
-
-- Prepare your image-mask pairs under the following structure:
-
-  ```kotlin
-  datasets/
-  └── <your_dataset_name>/
-      ├── images/
-      │   ├── sample_001.png
-      │   ├── ...
-      ├── masks/
-      │   ├── sample_001_mask.png # mask name can be different
-      │   ├── ...
-      ├── train.csv
-      ├── val.csv
-      └── test.csv
-  ```
-  
-  You can use the `datasets/splitDatasets.py` to prepare the `.csv` files. Each `.csv` should have the following format:
-  
-  ```csv
-  images/sample_001.png,masks/sample_001_mask.png
-  images/sample_002.png,masks/sample_002_mask.png
-  ...
-  ```
-  
-- Download the pre-trained weights of SAM from the [official SAM repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints) or our fine-tuned checkpoints for [Powdery Mildew]() and [Canopy](), and place them in the  `weights/` directory.
-
-
-
-### Step 2: Training
-
-1. Edit `train_demo.sh` to set key training configurations. All configurable options are listed in `cfg.py`.
-
-| Configuration    | args                                                 | Option                       | Note                                                         |
-| ---------------- | ---------------------------------------------------- | ---------------------------- | ------------------------------------------------------------ |
-| SAM backbone     | `arch`                                               | `vit_h`, `vit_b`             |                                                              |
-| Finetune type    | `finetune_type`                                      | `vanilla`, `adapter`, `lora` |                                                              |
-| Trainable module | `if_update_encoder`                                  | `True`, `False`              | `True`: encoder and decoder both trainable<br />`False`: only decoder trainable |
-| Adapter blocks   | `if_encoder_adapter`<br />`if_mask_decoder_adapter`  | `True`, `False`              | `if_update_encoder` must be `True` to use encoder adapter    |
-| Adpater depth    | `encoder_adapter_depths`                             | `range()`                    | choose encoder blocks to insert adapters                     |
-| LoRA blocks      | `if_encoder_lora_layer`<br />`if_decoder_lora_layer` | `True`, `False`              | Same logic as adapters                                       |
-| LoRA layer       | `encoder_lora_layer`                                 | `[]`                         | list of encoder layers to insert LoRA                        |
-| Warmup           | `if_warmup`                                          | `True`, `False`              |                                                              |
-| Warmup period    | `warmup_period`                                      | `int`                        |                                                              |
-
-
-
-2. run the training script:
-
-   ```bash
-   bash train_demo.sh
-   ```
-
-
-
-### Step 3: Inference & Evaluation
-
-1. Run inference with:
-
-   ```bash
-   bash inference_sam_clip.bash
-   ```
-
-   Edit file paths in the `.sh` file before running. Masks will be saved in `output_dir`.
-
-2. Run comprehensive performance evaluation ($mIoU^I$, $mIoU^D$, $mIoU^{Cq}$) with:
-
-   ```bash
-   bash eval_all.bash
-   ```
-
-   Edit `FOLDER_PAIRS`, `QUANTILES`, etc. The results will be printed in terminal and saved to the input folder.
-
-
-
-## Acknowledgement
-
-Our framework is developed on top of the [finetuneSAM](https://github.com/mazurowski-lab/finetune-SAM) codebase, with major modifications to support:
-
-- Multi-modal input
-- CLIP-based image and text embeddings
-- Unified backbone with parameter-efficient finetuning
-- Specialized datasets in high-throughput plant phenotyping
-
-Other foundations for this codebase:
-
-1. [SAM](https://github.com/facebookresearch/segment-anything)
-2. [MobileSAM](https://github.com/ChaoningZhang/MobileSAM)
-3. [MedSAM](https://github.com/bowang-lab/MedSAM)
-4. [Medical SAM Adapter](https://github.com/KidsWithTokens/Medical-SAM-Adapter)
-5. [LoRA for SAM](https://github.com/JamesQFreeman/Sam_LoRA)
-
-
-
-## **Citation**
-
-Please cite our paper if you find our codes or paper helpful
-
-```bib
-@article{Lin2026,
-  title = {Integrating Large Multi-Modal Models for Automated Powdery Mildew Phenotyping in Grapevines},
-  url = {http://dx.doi.org/10.2139/ssrn.6170008},
-  DOI = {10.2139/ssrn.6170008},
-  publisher = {Elsevier BV},
-  author = {Lin,  Yiyuan and Dashner,  Zachary and Jimenez,  Ana and Wilkerson,  Dustin and Cadle-Davidson,  Lance  E. and Riaz,  Summaira and Jiang,  Yu},
-  year = {2026}
-}
-
-@inproceedings{linEffectiveIntegrationVision2024,
-  title = {Effective Integration of Vision Foundational Models for Semantic Segmentation to Quantify Grape Foliage Powdery Mildew Infection},
-  booktitle = {2024 ASABE Annual International Meeting},
-  author = {Lin, Yiyuan and Underhill, Anna and Cadle-Davidson, Lance and Jimenez, Ana and Riaz, Summaira and Jiang, Yu},
-  year = 2024,
-  series = {ASABE Paper No. 2401108},
-  pages = {1-12},
-  publisher = {ASABE},
-  address = {St. Joseph, MI},
-  doi = {10.13031/aim.202401108},
-  keywords = {CLIP,Computer Vision,Powdery Mildew,SAM,Semantic Segmentation,Vineyard Management.}
-}
+```bash
+./scripts/download_weights.sh vit_b
+# or
+./scripts/download_weights.sh vit_h
 ```
 
+The download script verifies the checkpoint with SHA-256.
+
+Run the complete single-GPU smoke test with a generated synthetic dataset:
+
+```bash
+./examples/smoke-test-single-gpu.sh
+```
+
+It uses GPU 0 by default and trains ViT-B for one epoch on two generated training pairs and two validation pairs. Select another GPU and output name with:
+
+```bash
+GPU_ID=1 SMOKE_RUN_NAME=my_smoke_test \
+  ./examples/smoke-test-single-gpu.sh
+```
+
+## Runtime directories
+
+Docker Compose mounts four directories:
+
+| Container path | Purpose | Default host path |
+|---|---|---|
+| `/workspace/data` | Datasets | `./volumes/data` |
+| `/workspace/weights` | Initial SAM weights | `./volumes/weights` |
+| `/workspace/checkpoints` | Training checkpoints and logs | `./volumes/checkpoints` |
+| `/workspace/outputs` | Inference and evaluation output | `./volumes/outputs` |
+
+The defaults are defined in `.env.example`. Generate `.env` with the current host UID/GID, then edit paths when needed:
+
+```bash
+./scripts/configure.sh
+```
+
+Example:
+
+```dotenv
+SAM_CLIP_IMAGE=sam-clip:cuda11.6
+HOST_UID=1000
+HOST_GID=1000
+DATA_DIR=/absolute/path/to/data
+WEIGHTS_DIR=/absolute/path/to/weights
+CHECKPOINTS_DIR=/absolute/path/to/checkpoints
+OUTPUTS_DIR=/absolute/path/to/outputs
+SHM_SIZE=16gb
+TENSORBOARD_PORT=6006
+```
+
+`HOST_UID` and `HOST_GID` make files written to mounted directories belong to the invoking host user instead of root. `.env`, datasets, weights, checkpoints, and outputs are ignored by Git and the Docker build context.
+
+## Dataset format
+
+Prepare paired 2D images and single-channel masks:
+
+```text
+data/
+└── my_dataset/
+    ├── images/
+    │   ├── sample_001.png
+    │   └── sample_002.png
+    ├── masks/
+    │   ├── sample_001.png
+    │   └── sample_002.png
+    ├── train.csv
+    └── val.csv
+```
+
+Each CSV is comma-separated with no header. Paths are relative to `/workspace/data`:
+
+```csv
+my_dataset/images/sample_001.png,my_dataset/masks/sample_001.png
+my_dataset/images/sample_002.png,my_dataset/masks/sample_002.png
+```
+
+Create deterministic train/validation/test splits:
+
+```bash
+docker compose run --rm sam-clip split-dataset \
+  --image-dir /workspace/data/my_dataset/images \
+  --mask-dir /workspace/data/my_dataset/masks \
+  --output-dir /workspace/data/my_dataset \
+  --ratio 8 1 1 \
+  --seed 42
+```
+
+Important label options:
+
+- `-targets combine_all` converts all nonzero mask values into one foreground class. Use `-num_cls 2` in the usual binary case.
+- `-targets multi_all` keeps class IDs. Use background ID 0, contiguous class IDs, and set `-num_cls` to the total number of classes including background.
+- `-normalize_type sam` applies ImageNet/SAM normalization.
+- `-normalize_type medsam` applies per-image `[0,1]` normalization and should only be used with compatible pretrained weights.
+
+## Single-GPU training
+
+Edit `examples/train-single-gpu.sh`, then run:
+
+```bash
+./examples/train-single-gpu.sh
+```
+
+Equivalent command:
+
+```bash
+docker compose run --rm \
+  -e CUDA_VISIBLE_DEVICES=0 \
+  sam-clip train \
+  -arch vit_b \
+  -finetune_type adapter \
+  -if_update_encoder true \
+  -if_encoder_adapter true \
+  -if_mask_decoder_adapter true \
+  -encoder_adapter_depths 0,1,10,11 \
+  -sam_ckpt /workspace/weights/sam_vit_b_01ec64.pth \
+  -img_folder /workspace/data \
+  -mask_folder /workspace/data \
+  -train_img_list /workspace/data/my_dataset/train.csv \
+  -val_img_list /workspace/data/my_dataset/val.csv \
+  -dataset_name my_dataset \
+  -targets combine_all \
+  -num_cls 2 \
+  -dir_checkpoint /workspace/checkpoints/my_experiment \
+  -epochs 200 \
+  -b 2 \
+  -w 4 \
+  -if_warmup true
+```
+
+The output directory contains:
+
+```text
+my_experiment/
+├── args.json
+├── checkpoint_best.pth
+└── log/
+```
+
+ViT-H uses substantially more GPU memory than ViT-B. Reduce `-b` first if training runs out of memory.
+
+## Multi-GPU DDP training
+
+The DDP entrypoint launches one complete model replica per visible GPU. The `-b` value is the per-GPU batch size, so the global batch size is `-b × number of GPUs`.
+
+Edit and run:
+
+```bash
+./examples/train-multi-gpu.sh
+```
+
+To choose specific GPUs:
+
+```bash
+docker compose run --rm \
+  -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
+  sam-clip train-ddp [training arguments]
+```
+
+The entrypoint derives `torchrun --nproc_per_node` from the number of visible GPUs. Override it with `-e NPROC_PER_NODE=2` only when that value does not exceed the visible GPU count.
+
+## Inference
+
+A checkpoint directory must contain both `args.json` and `checkpoint_best.pth`.
+
+Semantic-mask inference:
+
+```bash
+docker compose run --rm \
+  -e CUDA_VISIBLE_DEVICES=0 \
+  sam-clip infer \
+  --checkpoint_dir /workspace/checkpoints/my_experiment \
+  --image_dir /workspace/data/my_dataset/test_images \
+  --output_dir /workspace/outputs/my_experiment
+```
+
+Inference with probability maps, connected-component instance masks, and confidence scores:
+
+```bash
+docker compose run --rm \
+  -e CUDA_VISIBLE_DEVICES=0 \
+  sam-clip infer-instances \
+  --checkpoint_dir /workspace/checkpoints/my_experiment \
+  --image_dir /workspace/data/my_dataset/test_images \
+  --output_dir /workspace/outputs/my_experiment_instances
+```
+
+Inference uses the `normalize_type` saved in `args.json`. CPU inference is available with `--device cpu`, although it is much slower.
+
+## Evaluation
+
+Semantic mIoU, per-image metrics, and worst-quantile analysis:
+
+```bash
+docker compose run --rm sam-clip evaluate \
+  --pred_folder /workspace/outputs/my_experiment \
+  --gt_folder /workspace/data/my_dataset/test_gt \
+  --output_csv /workspace/outputs/my_experiment/evaluation.csv \
+  --save_per_image \
+  --quantiles 5 10 15
+```
+
+Instance AP plus semantic evaluation, using output from `infer-instances`:
+
+```bash
+docker compose run --rm sam-clip evaluate-instances \
+  --pred_dir /workspace/outputs/my_experiment_instances \
+  --gt_dir /workspace/data/my_dataset/test_gt
+```
+
+## TensorBoard
+
+```bash
+docker compose up tensorboard
+```
+
+Open `http://localhost:6006`. Change `TENSORBOARD_PORT` in `.env` if required.
+
+## Utility commands
+
+List all container commands:
+
+```bash
+docker compose run --rm sam-clip help
+```
+
+Available utilities include:
+
+```bash
+docker compose run --rm sam-clip augment --help
+docker compose run --rm sam-clip convert-masks --help
+docker compose run --rm sam-clip export-coco --help
+docker compose run --rm sam-clip extract-subset --help
+docker compose run --rm sam-clip split-folder --help
+docker compose run --rm sam-clip split-dataset --help
+docker compose run --rm sam-clip colorize --help
+```
+
+Run an arbitrary packaged Python module or open a shell:
+
+```bash
+docker compose run --rm sam-clip python /opt/sam_clip/utils/eval_all.py --help
+docker compose run --rm sam-clip shell
+```
+
+## Reproducibility
+
+- Base image: `pytorch/pytorch:1.13.1-cuda11.6-cudnn8-runtime`
+- The linux/amd64 base-image digest is pinned in `Dockerfile`
+- PyTorch: 1.13.1
+- torchvision: 0.14.1
+- CUDA: 11.6
+- MONAI: 1.2.0
+- Direct Python dependencies: `requirements.txt`
+- Transitive and framework compatibility constraints: `constraints.txt`
+
+Record the built image ID when publishing a release:
+
+```bash
+docker image inspect sam-clip:cuda11.6 --format '{{.Id}}'
+```
+
+See `VALIDATION.md` for the checks performed on this distribution.
+
+## Publishing the image
+
+Push to a registry:
+
+```bash
+docker tag sam-clip:cuda11.6 registry.example.com/team/sam-clip:cuda11.6-v1
+docker push registry.example.com/team/sam-clip:cuda11.6-v1
+```
+
+Offline transfer:
+
+```bash
+docker save sam-clip:cuda11.6 | gzip > sam-clip_cuda11.6-v1.tar.gz
+gzip -dc sam-clip_cuda11.6-v1.tar.gz | docker load
+```
+
+Datasets, weights, checkpoints, and outputs must be distributed separately and mounted through `.env`.
+
+## Troubleshooting
+
+`could not select device driver "nvidia"`: install and configure the NVIDIA Container Toolkit, then restart Docker.
+
+`CUDA driver version is insufficient`: upgrade the host NVIDIA driver or verify that the CUDA 11.6 image is being used.
+
+No visible GPU: run `gpu-check`, then inspect `CUDA_VISIBLE_DEVICES` and the Docker NVIDIA runtime configuration.
+
+DataLoader/shared-memory failure: increase `SHM_SIZE` in `.env` or reduce `-w`.
+
+Missing images or masks: use comma-separated CSV files with no header, and paths relative to `/workspace/data`. Arguments passed to the application must use container paths, not host paths.
+
+## License and acknowledgements
+
+This distribution is licensed under the Apache License 2.0 in `LICENSE`.
+
+The project contains or depends on work from Segment Anything, MobileSAM, MedSAM, Medical SAM Adapter, and LoRA for SAM. Follow the licenses and citation requirements of the relevant upstream projects when using or redistributing this software.

@@ -1,0 +1,37 @@
+name: sam-clip
+
+x-sam-clip-common: &sam-clip-common
+  image: ${SAM_CLIP_IMAGE:-sam-clip:cuda11.6}
+  build:
+    context: .
+    dockerfile: Dockerfile
+  working_dir: /workspace
+  user: ${HOST_UID:-1000}:${HOST_GID:-1000}
+  ipc: host
+  shm_size: ${SHM_SIZE:-16gb}
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+  environment:
+    PYTHONUNBUFFERED: "1"
+    HOME: /tmp/sam-clip-home
+  volumes:
+    - ${DATA_DIR:-./volumes/data}:/workspace/data
+    - ${WEIGHTS_DIR:-./volumes/weights}:/workspace/weights
+    - ${CHECKPOINTS_DIR:-./volumes/checkpoints}:/workspace/checkpoints
+    - ${OUTPUTS_DIR:-./volumes/outputs}:/workspace/outputs
+
+services:
+  sam-clip:
+    <<: *sam-clip-common
+    command: ["help"]
+
+  tensorboard:
+    <<: *sam-clip-common
+    command: ["tensorboard", "--logdir", "/workspace/checkpoints", "--host", "0.0.0.0", "--port", "6006"]
+    ports:
+      - ${TENSORBOARD_PORT:-6006}:6006
